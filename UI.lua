@@ -1827,18 +1827,54 @@ end
 
 -- Initialize Acrylic (simplified)
 local Acrylic = {
-	AcrylicBlur = function() return {Frame = Creator.New("Frame", {BackgroundTransparency = 1}), Model = {}, AddParent = function() end, SetVisibility = function() end} end,
+	AcrylicBlur = function() 
+		return {
+			Frame = Creator.New("Frame", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 0.15,
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+				BorderSizePixel = 0,
+				ThemeTag = {
+					BackgroundColor3 = "AcrylicMain",
+				},
+			}, {
+				Creator.New("UICorner", {
+					CornerRadius = UDim.new(0, 8),
+				}),
+				Creator.New("UIStroke", {
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					Transparency = 0.3,
+					ThemeTag = {
+						Color = "AcrylicBorder",
+					},
+				}),
+			}), 
+			Model = {}, 
+			AddParent = function() end, 
+			SetVisibility = function() end
+		} 
+	end,
 	CreateAcrylic = function() return {} end,
 	AcrylicPaint = function() 
 		return {
 			Frame = Creator.New("Frame", {
 				Size = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 0.9,
-				BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+				BackgroundTransparency = 0.15,
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
 				BorderSizePixel = 0,
+				ThemeTag = {
+					BackgroundColor3 = "AcrylicMain",
+				},
 			}, {
 				Creator.New("UICorner", {
 					CornerRadius = UDim.new(0, 8),
+				}),
+				Creator.New("UIStroke", {
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					Transparency = 0.3,
+					ThemeTag = {
+						Color = "AcrylicBorder",
+					},
 				}),
 			}),
 			Model = {},
@@ -2061,6 +2097,39 @@ function FluentRenewed:CreateWindow(Config)
 			}
 		})
 	})
+	
+	-- Window Dragging Functionality
+	local UserInputService = game:GetService("UserInputService")
+	local dragging = false
+	local dragStart = nil
+	local startPos = nil
+	
+	local function UpdateInput(input)
+		local delta = input.Position - dragStart
+		Window.Root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+	
+	Creator.AddSignal(TitleBarFrame.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPos = Window.Root.Position
+			
+			local connection
+			connection = input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					dragging = false
+					connection:Disconnect()
+				end
+			end)
+		end
+	end)
+	
+	Creator.AddSignal(UserInputService.InputChanged, function(input)
+		if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			UpdateInput(input)
+		end
+	end)
 	
 	local TitleHolder = Creator.New("Frame", {
 		Size = UDim2.new(1, -16, 1, 0),
@@ -2518,8 +2587,9 @@ function FluentRenewed:CreateWindow(Config)
 				Size = UDim2.fromOffset(160, 30),
 				Position = UDim2.new(1, -10, 0.5, 0),
 				AnchorPoint = Vector2.new(1, 0.5),
-				BackgroundTransparency = 0.9,
+				BackgroundTransparency = 0.1,
 				Parent = DropdownFrame.Frame,
+				Text = "",
 				ThemeTag = {
 					BackgroundColor3 = "DropdownFrame"
 				}
@@ -2529,6 +2599,120 @@ function FluentRenewed:CreateWindow(Config)
 				}),
 				DropdownDisplay,
 			})
+			
+			-- Dropdown List
+			local DropdownList = Creator.New("Frame", {
+				Size = UDim2.new(0, 160, 0, 0),
+				Position = UDim2.new(1, -10, 1, 5),
+				AnchorPoint = Vector2.new(1, 0),
+				BackgroundTransparency = 0.1,
+				Parent = DropdownFrame.Frame,
+				Visible = false,
+				ZIndex = 1000,
+				ThemeTag = {
+					BackgroundColor3 = "DropdownHolder"
+				}
+			}, {
+				Creator.New("UICorner", {
+					CornerRadius = UDim.new(0, 5),
+				}),
+				Creator.New("UIStroke", {
+					ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+					Transparency = 0.5,
+					ThemeTag = {
+						Color = "DropdownBorder",
+					},
+				}),
+				Creator.New("UIListLayout", {
+					SortOrder = Enum.SortOrder.LayoutOrder,
+				}),
+				Creator.New("UIPadding", {
+					PaddingTop = UDim.new(0, 5),
+					PaddingBottom = UDim.new(0, 5),
+				}),
+			})
+			
+			local function UpdateDropdownList()
+				-- Clear existing options
+				for _, child in ipairs(DropdownList:GetChildren()) do
+					if child:IsA("TextButton") then
+						child:Destroy()
+					end
+				end
+				
+				-- Create new options
+				for i, value in ipairs(Dropdown.Values) do
+					local OptionButton = Creator.New("TextButton", {
+						Size = UDim2.new(1, -10, 0, 25),
+						Position = UDim2.new(0, 5, 0, 0),
+						BackgroundTransparency = 1,
+						Text = tostring(value),
+						FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json"),
+						TextSize = 13,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						Parent = DropdownList,
+						ThemeTag = {
+							TextColor3 = "DropdownOption"
+						}
+					})
+					
+					Creator.AddSignal(OptionButton.MouseButton1Click, function()
+						if Dropdown.Multi then
+							local CurrentValues = Dropdown.Value or {}
+							local Found = false
+							for j, v in ipairs(CurrentValues) do
+								if v == value then
+									table.remove(CurrentValues, j)
+									Found = true
+									break
+								end
+							end
+							if not Found then
+								table.insert(CurrentValues, value)
+							end
+							Dropdown:SetValue(CurrentValues)
+						else
+							Dropdown:SetValue(value)
+							DropdownList.Visible = false
+						end
+					end)
+					
+					Creator.AddSignal(OptionButton.MouseEnter, function()
+						OptionButton.BackgroundTransparency = 0.9
+					end)
+					
+					Creator.AddSignal(OptionButton.MouseLeave, function()
+						OptionButton.BackgroundTransparency = 1
+					end)
+				end
+				
+				-- Update size
+				DropdownList.Size = UDim2.new(0, 160, 0, math.min(#Dropdown.Values * 25 + 10, 200))
+			end
+			
+			-- Click handler to toggle dropdown
+			Creator.AddSignal(DropdownInner.MouseButton1Click, function()
+				DropdownList.Visible = not DropdownList.Visible
+				if DropdownList.Visible then
+					UpdateDropdownList()
+				end
+			end)
+			
+			-- Close dropdown when clicking outside
+			Creator.AddSignal(game:GetService("UserInputService").InputBegan, function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					if DropdownList.Visible then
+						local mouse = game:GetService("Players").LocalPlayer:GetMouse()
+						local dropdownPos = DropdownList.AbsolutePosition
+						local dropdownSize = DropdownList.AbsoluteSize
+						
+						if mouse.X < dropdownPos.X or mouse.X > dropdownPos.X + dropdownSize.X or
+						   mouse.Y < dropdownPos.Y or mouse.Y > dropdownPos.Y + dropdownSize.Y then
+							DropdownList.Visible = false
+						end
+					end
+				end
+			end)
 			
 			function Dropdown:SetValue(Value)
 				if Dropdown.Multi then
@@ -2582,7 +2766,7 @@ function FluentRenewed:CreateWindow(Config)
 				PlaceholderText = Config.Placeholder or "",
 				TextSize = 12,
 				TextXAlignment = Enum.TextXAlignment.Left,
-				BackgroundTransparency = 0.9,
+				BackgroundTransparency = 0.1,
 				Size = UDim2.fromOffset(160, 30),
 				Position = UDim2.new(1, -10, 0.5, 0),
 				AnchorPoint = Vector2.new(1, 0.5),
@@ -2644,8 +2828,8 @@ function FluentRenewed:CreateWindow(Config)
 				DescriptionAlignment = Config.ContentAlignment
 			})
 			
-			ParagraphFrame.Frame.BackgroundTransparency = 0.92
-			ParagraphFrame.Border.Transparency = 0.6
+			ParagraphFrame.Frame.BackgroundTransparency = 0.15
+			ParagraphFrame.Border.Transparency = 0.3
 			
 			function Paragraph:SetValue(Value)
 				Paragraph.Value = tostring(Value or "")
@@ -2831,7 +3015,7 @@ function FluentRenewed:CreateWindow(Config)
 				Size = UDim2.fromOffset(0, 30),
 				Position = UDim2.new(1, -10, 0.5, 0),
 				AnchorPoint = Vector2.new(1, 0.5),
-				BackgroundTransparency = 0.9,
+				BackgroundTransparency = 0.1,
 				Parent = KeybindFrame.Frame,
 				AutomaticSize = Enum.AutomaticSize.X,
 				Text = "",
