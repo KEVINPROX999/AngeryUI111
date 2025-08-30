@@ -4,6 +4,102 @@
 
 local FluentRenewed = {}
 
+-- Clone function for security
+local function Clone<Original>(ToClone: any & Original): (Original, boolean)
+	local Type = typeof(ToClone)
+
+	if Type == "function" and (clonefunc or clonefunction) then
+		return (clonefunc or clonefunction)(ToClone), true
+	elseif Type == "Instance" and (cloneref or clonereference) then
+		return (cloneref or clonereference)(ToClone), true
+	elseif Type == "table" then
+		local function deepcopy(orig, copies: { [any]: any }?)
+			local Copies = copies or {}
+			local orig_type, copy = typeof(orig), nil
+
+			if orig_type == 'table' then
+				if Copies[orig] then
+					copy = Copies[orig]
+				else	
+					copy = {}
+					Copies[orig] = copy
+
+					for orig_key, orig_value in next, orig, nil do
+						copy[deepcopy(orig_key, Copies)] = deepcopy(orig_value, Copies)
+					end
+
+					(setrawmetatable or setmetatable)(copy, deepcopy((getrawmetatable or getmetatable)(orig), Copies))
+				end
+			elseif orig_type == 'Instance' or orig_type == 'function' then
+				copy = Clone(orig)
+			else
+				copy = orig
+			end
+
+			return copy
+		end
+
+		return deepcopy(ToClone), true
+	else
+		return ToClone, false
+	end
+end
+
+-- Proper GUI Parent Detection
+local function GetProperParent()
+	local success, result = pcall(function()
+		return (gethui or get_hidden_ui)()
+	end)
+
+	if success and result then
+		return result
+	end
+
+	success, result = pcall(function()
+		local CoreGui = game:GetService("CoreGui")
+		CoreGui:GetFullName()
+		return CoreGui
+	end)
+
+	if success and result then
+		return result
+	end
+
+	success, result = pcall(function()
+		return (game:IsLoaded() or game.Loaded:Wait() or true) and game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui", 10)
+	end)
+
+	if success and result then
+		return result
+	end
+
+	success, result = pcall(function()
+		local StarterGui = game:GetService("StarterGui")
+		StarterGui:GetFullName()
+		return StarterGui
+	end)
+
+	if success and result then
+		return result
+	end
+
+	return error("Seriously bad engine. Can't find a place to store the GUI. Robust code can't help this much incompetence.", 0)
+end
+
+-- Services with Clone protection
+local MarketplaceService = Clone(game:GetService("MarketplaceService"))
+local TweenService = Clone(game:GetService("TweenService"))
+local Camera = Clone(game:GetService("Workspace")).CurrentCamera
+local Players = Clone(game:GetService("Players"))
+local UserInputService = Clone(game:GetService("UserInputService"))
+local RunService = Clone(game:GetService("RunService"))
+local HttpService = Clone(game:GetService("HttpService"))
+local GuiService = Clone(game:GetService("GuiService"))
+
+-- Shared table
+local SharedTable = shared or _G or (getgenv and getgenv()) or getfenv(1)
+SharedTable.FluentRenewed = SharedTable.FluentRenewed or {}
+
 -- Dependencies: Simplified versions of Flipper, Signal, Ripple
 local Flipper = {}
 do
@@ -1893,28 +1989,374 @@ FluentRenewed.Version = "1.0.5"
 FluentRenewed.Theme = "Dark"
 FluentRenewed.UseAcrylic = false
 FluentRenewed.Acrylic = false
-FluentRenewed.Transparency = false
+FluentRenewed.Transparency = true
 FluentRenewed.OpenFrames = {}
 FluentRenewed.Options = {}
 FluentRenewed.DialogOpen = false
 FluentRenewed.Unloaded = false
+FluentRenewed.Loaded = true
 FluentRenewed.CreatedWindow = nil
-FluentRenewed.Utilities = Utilities
+FluentRenewed.MinimizeKey = Enum.KeyCode.LeftControl
+FluentRenewed.Connections = Creator.Signals
+
+-- Utilities
+FluentRenewed.Utilities = {
+	Themes = Themes,
+	Shared = SharedTable,
+	Creator = Creator,
+	Clone = Clone
+}
+
+function FluentRenewed.Utilities:Resize(X: number, Y: number): (number, number)
+    local x, y, CurrentSize = X / 1920, Y / 1080, Camera.ViewportSize
+    return CurrentSize.X * x, CurrentSize.Y * y
+end
+
+function FluentRenewed.Utilities:Truncate(number: number, decimals: number, round: boolean): number
+	local shift = 10 ^ (typeof(decimals) == "number" and math.max(decimals, 0) or 0)
+
+	if round then
+		return math.round(number * shift) // 1 / shift
+	else
+		return number * shift // 1 / shift
+	end
+end
+
+function FluentRenewed.Utilities:Round(Number: number, Factor: number): number
+	return FluentRenewed.Utilities:Truncate(Number, Factor, true)
+end
+
+function FluentRenewed.Utilities:GetIcon(Name: string): { Image: string, ImageRectSize: Vector2, ImageRectOffset: Vector2 }
+	return Name ~= "SetIcon" and Icons and Icons[Name] or nil
+end
+
+function FluentRenewed.Utilities:Prettify(ToPrettify: EnumItem & string & number): string | number
+	if typeof(ToPrettify) == "EnumItem" then
+		return ({ToPrettify.Name:gsub("(%l)(%u)", "%1 %2")})[1]
+	elseif typeof(ToPrettify) == "string" then
+		return ({ToPrettify:gsub("(%l)(%u)", "%1 %2")})[1]
+	elseif typeof(ToPrettify) == "number" then
+		return FluentRenewed.Utilities:Round(ToPrettify, 2)
+	else
+		return tostring(ToPrettify)
+	end
+end
+
+function FluentRenewed.Utilities:GetOS()
+	local OSName = "Unknown"
+	
+	if GuiService:IsTenFootInterface() then
+		local L2Button_Name = UserInputService:GetStringForKeyCode(Enum.KeyCode.ButtonL2)
+
+		OSName = if L2Button_Name == "ButtonLT" then "Xbox" elseif L2Button_Name == "ButtonL2" then "PlayStation" else "Console"
+	elseif GuiService.IsWindows then
+		OSName = "Windows"
+	elseif version():find("^0.") == 1 then
+		OSName = "macOS"
+	elseif version():find("^2.") == 1 then
+		OSName = UserInputService.VREnabled and "MetaHorizon" or "Mobile"
+	end
+
+	return OSName
+end
+
 FluentRenewed.Themes = Themes.Names
 
--- GUI Setup
+-- GUI Setup with proper parent
 FluentRenewed.GUI = Creator.New("ScreenGui", {
 	Name = "FluentRenewed",
-	Parent = game:GetService("CoreGui"),
+	Parent = GetProperParent(),
 	ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 })
 
-function FluentRenewed:SafeCallback(Callback, ...)
-	local Success, Error = pcall(Callback, ...)
-	if not Success then
-		warn("Fluent Renewed Callback Error:", Error)
+FluentRenewed.UIContainer = FluentRenewed.GUI.Parent
+
+function FluentRenewed:SafeCallback(Function, ...)
+	assert(typeof(Function) == "function", debug.traceback(`FluentRenewed:SafeCallback expects type 'function' at Argument #1, got '{typeof(Function)}'`, 2))
+
+	task.spawn(function(...)
+		local Success, Event = pcall(Function, ...)
+
+		if not Success then
+			local _, i = Event:find(":%d+: ")
+	
+			task.defer(error, debug.traceback(Event, 2))
+	
+			FluentRenewed:Notify({
+				Title = "Interface",
+				Content = "Callback error",
+				SubContent = if typeof(i) == "number" then Event:sub(i + 1) else Event,
+				Duration = 5,
+			})
+		end
+	end, ...)
+end
+
+function FluentRenewed:ToggleAcrylic(Value: boolean)
+	if FluentRenewed.CreatedWindow then
+		if FluentRenewed.UseAcrylic then
+			FluentRenewed.Acrylic = Value
+			if FluentRenewed.CreatedWindow.AcrylicPaint and FluentRenewed.CreatedWindow.AcrylicPaint.Model then
+				FluentRenewed.CreatedWindow.AcrylicPaint.Model.Transparency = Value and 0.98 or 1
+			end
+			if Value then
+				Acrylic.Enable()
+			else
+				Acrylic.Disable()
+			end
+		end
 	end
 end
+
+function FluentRenewed:ToggleTransparency(Value: boolean)
+	if FluentRenewed.CreatedWindow then
+		FluentRenewed.Transparency = Value
+		if FluentRenewed.CreatedWindow.AcrylicPaint and FluentRenewed.CreatedWindow.AcrylicPaint.Frame then
+			FluentRenewed.CreatedWindow.AcrylicPaint.Frame.Background.BackgroundTransparency = Value and 0.35 or 0
+		end
+	end
+end
+
+function FluentRenewed:Destroy()
+	if FluentRenewed.CreatedWindow then
+		FluentRenewed.Unloaded = true
+		FluentRenewed.Loaded = false
+
+		if FluentRenewed.UseAcrylic and FluentRenewed.CreatedWindow.AcrylicPaint and FluentRenewed.CreatedWindow.AcrylicPaint.Model then
+			FluentRenewed.CreatedWindow.AcrylicPaint.Model:Destroy()
+		end
+
+		Creator.Disconnect()
+
+		for i,v in next, FluentRenewed.Connections do
+			local type = typeof(v)
+
+			if type == "RBXScriptConnection" and v.Connected then
+				v:Disconnect()
+			end
+		end
+
+		local info, tweenProps, doTween = TweenInfo.new(2 / 3, Enum.EasingStyle.Quint), {}, false
+
+		local function IsA(obj: Instance, class: string)
+			local isClass = obj:IsA(class)
+
+			if isClass then
+				doTween = true
+			end
+
+			return isClass
+		end
+
+		for i,v in next, FluentRenewed.GUI:GetDescendants() do
+			table.clear(tweenProps)
+
+			if IsA(v, "GuiObject") then
+				tweenProps.BackgroundTransparency = 1
+			end
+
+			if IsA(v, "ScrollingFrame") then
+				tweenProps.ScrollBarImageTransparency = 1		
+			end
+
+			if IsA(v, "TextLabel") or IsA(v, "TextBox") then
+				tweenProps.TextStrokeTransparency = 1
+				tweenProps.TextTransparency = 1
+			end
+
+			if IsA(v, "UIStroke") then
+				tweenProps.Transparency = 1
+			end
+
+			if IsA(v, "ImageLabel") or IsA(v, "ImageButton") then
+				tweenProps.ImageTransparency = 1
+			end
+
+			if doTween then
+				doTween = false
+				TweenService:Create(v, info, tweenProps):Play()
+			end
+		end
+
+		task.delay(info.Time, function()
+			FluentRenewed.GUI:Destroy()
+		end)
+	end
+end
+
+-- SaveManager for Config System
+local SaveManager = {} do
+	SaveManager.Folder = "FluentSettings"
+	SaveManager.Ignore = {}
+	SaveManager.Options, SaveManager.Library = {}, {}
+	SaveManager.Parser = {
+		Toggle = {
+			Save = function(idx, object) 
+				return { type = "Toggle", idx = idx, value = object.Value, Timestamp = os.time() } 
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] then 
+					SaveManager.Options[idx]:SetValue(data.value)
+				end
+			end,
+		},
+		Slider = {
+			Save = function(idx, object)
+				return { type = "Slider", idx = idx, value = object.Value, Timestamp = os.time() }
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] then 
+					SaveManager.Options[idx]:SetValue(data.value)
+				end
+			end,
+		},
+		Dropdown = {
+			Save = function(idx, object)
+				return { type = "Dropdown", idx = idx, value = object.Value, multi = object.Multi, Timestamp = os.time() }
+			end,
+			Load = function(idx, data)
+				if data.value == nil then return end
+				local DropdownElement = SaveManager.Options[idx]
+				if DropdownElement then
+					DropdownElement:SetValue(data.value)
+				end
+			end,
+		},
+		Colorpicker = {
+			Save = function(idx, object)
+				return { type = "Colorpicker", idx = idx, value = object.Value:ToHex(), Timestamp = os.time() }
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] then 
+					SaveManager.Options[idx]:SetValueRGB(Color3.fromHex(data.value))
+				end
+			end,
+		},
+		Keybind = {
+			Save = function(idx, object)
+				return { type = "Keybind", idx = idx, mode = object.Mode, key = object.Value, Timestamp = os.time() }
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] then 
+					SaveManager.Options[idx]:SetValue(data.key, data.mode)
+				end
+			end,
+		},
+		Input = {
+			Save = function(idx, object)
+				return { type = "Input", idx = idx, text = object.Value, Timestamp = os.time() }
+			end,
+			Load = function(idx, data)
+				if SaveManager.Options[idx] and type(data.text) == "string" then
+					SaveManager.Options[idx]:SetValue(data.text)
+				end
+			end,
+		},
+	}
+
+	function SaveManager:SetIgnoreIndexes(list)
+		for _, key in next, list do
+			self.Ignore[key] = true
+		end
+	end
+
+	function SaveManager:SetFolder(folder)
+		self.Folder = folder
+		self:BuildFolderTree()
+	end
+
+	function SaveManager:BuildFolderTree()
+		local paths = {
+			self.Folder,
+			`{self.Folder}/settings`
+		}
+
+		for i = 1, #paths do
+			local str = paths[i]
+			if not isfolder(str) then
+				makefolder(str)
+			end
+		end
+	end
+
+	function SaveManager:SetLibrary(library)
+		self.Library = library
+		self.Options = library.Options
+	end
+
+	SaveManager:BuildFolderTree()
+end
+
+-- InterfaceManager for UI Settings  
+local InterfaceManager = {} do
+	InterfaceManager.Folder = "FluentRenewedSettings"
+
+    InterfaceManager.Settings = {
+        Theme = "Dark",
+        Acrylic = true,
+        Transparency = true,
+        MenuKeybind = Enum.KeyCode.RightControl
+    }
+
+    function InterfaceManager:SetFolder(folder)
+		self.Folder = folder;
+		self:BuildFolderTree()
+	end
+
+    function InterfaceManager:SetLibrary(library)
+		self.Library = library
+
+		InterfaceManager.Settings = {
+			Theme = self.Library.Theme or "Dark",
+			Acrylic = self.Library.UseAcrylic or true,
+			Transparency = self.Library.Transparency or true,
+			MenuKeybind = self.Library.MinimizeKey or Enum.KeyCode.RightControl
+		}
+	end
+
+    function InterfaceManager:BuildFolderTree()
+		local paths = {}
+
+		local parts = self.Folder:split("/")
+
+		for idx = 1, #parts do
+			paths[#paths + 1] = table.concat(parts, "/", 1, idx)
+		end
+		
+		paths[#paths + 1] = self.Folder
+		paths[#paths + 1] = `{self.Folder}/settings`
+
+		for i = 1, #paths do
+			local str = paths[i]
+			if not isfolder(str) then
+				makefolder(str)
+			end
+		end
+	end
+
+    function InterfaceManager:SaveSettings()
+        writefile(`{self.Folder}/options.json`, HttpService:JSONEncode(InterfaceManager.Settings))
+    end
+
+    function InterfaceManager:LoadSettings()
+        local path = `{self.Folder}/options.json`
+
+        if isfile(path) then
+            local data = readfile(path)
+            local success, decoded = pcall(HttpService.JSONDecode, HttpService, data)
+
+            if success then
+                for i, v in next, decoded do
+                    InterfaceManager.Settings[i] = v
+                end
+            end
+        end
+    end
+end
+
+-- Expose Addons
+FluentRenewed.SaveManager = SaveManager
+FluentRenewed.InterfaceManager = InterfaceManager
 
 function FluentRenewed:SetTheme(Theme)
 	if table.find(Themes.Names, Theme) then
@@ -2754,6 +3196,8 @@ function FluentRenewed:CreateWindow(Config)
 			
 			local Input = {
 				Value = Config.Default or "",
+				Numeric = Config.Numeric or false,
+				Finished = Config.Finished or false,
 				Callback = Config.Callback or function() end,
 				Type = "Input"
 			}
@@ -2786,9 +3230,15 @@ function FluentRenewed:CreateWindow(Config)
 			})
 			
 			function Input:SetValue(Value)
-				Input.Value = tostring(Value)
-				InputBox.Text = Input.Value
-				FluentRenewed:SafeCallback(Input.Callback, Input.Value)
+				if Input.Numeric then
+					Value = tonumber(Value) or 0
+				end
+				Input.Value = Input.Numeric and Value or tostring(Value)
+				InputBox.Text = tostring(Input.Value)
+				
+				if not Input.Finished then
+					FluentRenewed:SafeCallback(Input.Callback, Input.Value)
+				end
 			end
 			
 			function Input:OnChanged(Func)
@@ -2796,15 +3246,26 @@ function FluentRenewed:CreateWindow(Config)
 				FluentRenewed:SafeCallback(Func, Input.Value)
 			end
 			
-			if Config.Finished then
+			if Input.Finished then
 				Creator.AddSignal(InputBox.FocusLost, function(enter)
 					if enter then
-						Input:SetValue(InputBox.Text)
+						local newText = InputBox.Text
+						if Input.Numeric then
+							newText = newText:gsub("[^%d%.%-]", "")
+							InputBox.Text = newText
+						end
+						Input:SetValue(newText)
+						FluentRenewed:SafeCallback(Input.Callback, Input.Value)
 					end
 				end)
 			else
 				Creator.AddSignal(InputBox:GetPropertyChangedSignal("Text"), function()
-					Input:SetValue(InputBox.Text)
+					local newText = InputBox.Text
+					if Input.Numeric then
+						newText = newText:gsub("[^%d%.%-]", "")
+						InputBox.Text = newText
+					end
+					Input:SetValue(newText)
 				end)
 			end
 			
