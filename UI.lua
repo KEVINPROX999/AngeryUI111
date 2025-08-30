@@ -2027,7 +2027,38 @@ function FluentRenewed.Utilities:Round(Number: number, Factor: number): number
 end
 
 function FluentRenewed.Utilities:GetIcon(Name: string): { Image: string, ImageRectSize: Vector2, ImageRectOffset: Vector2 }
-	return Name ~= "SetIcon" and Icons and Icons[Name] or nil
+	-- Basic built-in icons for titlebar
+	local BuiltInIcons = {
+		Close = {
+			Image = "rbxasset://textures/ui/GuiImagePlaceholder.png",
+			ImageRectSize = Vector2.new(24, 24),
+			ImageRectOffset = Vector2.new(0, 0),
+			-- Use unicode for close: ✕
+			Unicode = "✕"
+		},
+		Max = {
+			Image = "rbxasset://textures/ui/GuiImagePlaceholder.png", 
+			ImageRectSize = Vector2.new(24, 24),
+			ImageRectOffset = Vector2.new(0, 0),
+			-- Use unicode for maximize: ⬜
+			Unicode = "⬜"
+		},
+		Min = {
+			Image = "rbxasset://textures/ui/GuiImagePlaceholder.png",
+			ImageRectSize = Vector2.new(24, 24), 
+			ImageRectOffset = Vector2.new(0, 0),
+			-- Use unicode for minimize: ➖
+			Unicode = "➖"
+		},
+		Restore = {
+			Image = "rbxasset://textures/ui/GuiImagePlaceholder.png",
+			ImageRectSize = Vector2.new(24, 24),
+			ImageRectOffset = Vector2.new(0, 0),
+			Unicode = "🗗"
+		}
+	}
+	
+	return BuiltInIcons[Name] or (Icons and Icons[Name]) or nil
 end
 
 function FluentRenewed.Utilities:Prettify(ToPrettify: EnumItem & string & number): string | number
@@ -2540,28 +2571,109 @@ function FluentRenewed:CreateWindow(Config)
 		})
 	})
 	
+	-- TitleBar Button Creator
+	local function CreateTitleBarButton(Icon, Position, Parent, Callback)
+		local Button = {
+			Callback = Callback or function() end,
+			OnDebounce = false
+		}
+
+		local IconData = FluentRenewed.Utilities:GetIcon(Icon)
+		
+		Button.Frame = Creator.New("TextButton", {
+			Size = UDim2.new(0, 34, 1, -8),
+			AnchorPoint = Vector2.new(1, 0),
+			BackgroundTransparency = 1,
+			Parent = Parent,
+			Position = Position,
+			Text = "",
+			ThemeTag = {
+				BackgroundColor3 = "Text",
+			},
+		}, {
+			Creator.New("UICorner", {
+				CornerRadius = UDim.new(0, 7),
+			}),
+			-- Use TextLabel with Unicode instead of ImageLabel for better compatibility
+			Creator.New("TextLabel", {
+				Text = IconData and IconData.Unicode or "?",
+				Size = UDim2.fromOffset(16, 16),
+				Position = UDim2.fromScale(0.5, 0.5),
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				BackgroundTransparency = 1,
+				TextSize = 12,
+				FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json"),
+				Name = "Icon",
+				ThemeTag = {
+					TextColor3 = "Text",
+				},
+			}),
+		})
+
+		local TransparencyMotor = Creator.SpringMotor(1, Button.Frame, "BackgroundTransparency")
+
+		Creator.AddSignal(Button.Frame.MouseEnter, function()
+			TransparencyMotor:setGoal(Flipper.Spring.new(0.94, { frequency = 6 }))
+		end)
+
+		Creator.AddSignal(Button.Frame.MouseLeave, function()
+			TransparencyMotor:setGoal(Flipper.Spring.new(1, { frequency = 6 }))
+		end)
+
+		Creator.AddSignal(Button.Frame.MouseButton1Down, function()
+			TransparencyMotor:setGoal(Flipper.Spring.new(0.96, { frequency = 6 }))
+		end)
+
+		Creator.AddSignal(Button.Frame.MouseButton1Up, function()
+			TransparencyMotor:setGoal(Flipper.Spring.new(0.94, { frequency = 6 }))
+		end)
+
+		Creator.AddSignal(Button.Frame.MouseButton1Click, function()
+			if not Button.OnDebounce then
+				Button.OnDebounce = true
+				task.delay(0.1, function()
+					Button.OnDebounce = false
+				end)
+				Button.Callback()
+			end
+		end)
+
+		return Button
+	end
+
 	-- Window Dragging Functionality
 	local UserInputService = game:GetService("UserInputService")
 	local dragging = false
 	local dragStart = nil
 	local startPos = nil
 	
+	-- Store current position to prevent reset
+	Window.CurrentPosition = Window.Root.Position
+	
 	local function UpdateInput(input)
 		local delta = input.Position - dragStart
-		Window.Root.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		local newPosition = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+		Window.Root.Position = newPosition
+		Window.CurrentPosition = newPosition  -- Keep track of current position
 	end
 	
-	Creator.AddSignal(TitleBarFrame.InputBegan, function(input)
+	-- Dragging should only work on TitleHolder, not buttons
+	Creator.AddSignal(TitleHolder.InputBegan, function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			-- Don't allow dragging if maximized
+			if Window.Maximized then return end
+			
 			dragging = true
 			dragStart = input.Position
-			startPos = Window.Root.Position
+			startPos = Window.CurrentPosition  -- Use current position instead
 			
 			local connection
 			connection = input.Changed:Connect(function()
 				if input.UserInputState == Enum.UserInputState.End then
 					dragging = false
 					connection:Disconnect()
+					-- Update stored position after drag ends
+					Window.CurrentPosition = Window.Root.Position
 				end
 			end)
 		end
@@ -2574,7 +2686,7 @@ function FluentRenewed:CreateWindow(Config)
 	end)
 	
 	local TitleHolder = Creator.New("Frame", {
-		Size = UDim2.new(1, -16, 1, 0),
+		Size = UDim2.new(1, -160, 1, 0), -- Reserve space for buttons
 		Parent = TitleBarFrame,
 		Position = UDim2.new(0, 16, 0, 0),
 		BackgroundTransparency = 1,
@@ -2585,6 +2697,103 @@ function FluentRenewed:CreateWindow(Config)
 			SortOrder = Enum.SortOrder.LayoutOrder,
 		})
 	})
+	
+	-- Add Window Control Variables
+	Window.Minimized = false
+	Window.Maximized = false
+	Window.OriginalSize = Config.Size or UDim2.fromOffset(830, 525)
+	Window.OriginalPosition = Window.Root.Position
+	
+	-- Minimize Function
+	function Window:Minimize()
+		if not Window.Minimized then
+			Window.Minimized = true
+			-- Hide main content, keep titlebar
+			Window.ContainerCanvas.Visible = false
+			Window.TabDisplay.Visible = false
+			
+			-- Resize to titlebar only
+			Window.Root.Size = UDim2.new(Window.Root.Size.X.Scale, Window.Root.Size.X.Offset, 0, 42)
+		else
+			Window.Minimized = false
+			-- Show main content
+			Window.ContainerCanvas.Visible = true
+			Window.TabDisplay.Visible = true
+			
+			-- Restore original size
+			local TargetSize = Window.Maximized and UDim2.fromScale(1, 1) or Window.OriginalSize
+			Window.Root.Size = TargetSize
+		end
+	end
+	
+	-- Maximize Function  
+	function Window:Maximize(State)
+		if State == nil then State = not Window.Maximized end
+		
+		if State and not Window.Maximized then
+			Window.Maximized = true
+			Window.OriginalSize = Window.Root.Size
+			Window.OriginalPosition = Window.CurrentPosition  -- Use current position
+			
+			-- Maximize to fullscreen
+			Window.Root.Size = UDim2.fromScale(1, 1)
+			Window.Root.Position = UDim2.fromScale(0, 0)
+		elseif not State and Window.Maximized then
+			Window.Maximized = false
+			
+			-- Restore original size and position
+			Window.Root.Size = Window.OriginalSize
+			Window.Root.Position = Window.OriginalPosition
+			Window.CurrentPosition = Window.OriginalPosition  -- Update current position
+		end
+	end
+	
+	-- Create TitleBar Buttons
+	local CloseButton = CreateTitleBarButton("Close", UDim2.new(1, -4, 0, 4), TitleBarFrame, function()
+		Window:Dialog({
+			Title = "Close Interface",
+			Content = "Are you sure you want to close the interface?",
+			Buttons = {
+				{
+					Title = "Yes",
+					Callback = function()
+						FluentRenewed:Destroy()
+					end
+				},
+				{
+					Title = "No",
+					Callback = function()
+						-- Do nothing
+					end
+				}
+			}
+		})
+	end)
+	
+	local MaxButton = CreateTitleBarButton("Max", UDim2.new(1, -40, 0, 4), TitleBarFrame, function()
+		Window:Maximize()
+		-- Update icon based on state
+		local icon = Window.Maximized and "Restore" or "Max"
+		local iconData = FluentRenewed.Utilities:GetIcon(icon)
+		if iconData then
+			MaxButton.Frame.Icon.Text = iconData.Unicode
+		end
+	end)
+	
+	local MinButton = CreateTitleBarButton("Min", UDim2.new(1, -76, 0, 4), TitleBarFrame, function()
+		Window:Minimize()
+	end)
+	
+	-- Add MinimizeKey support
+	if Config.MinimizeKey then
+		Creator.AddSignal(UserInputService.InputBegan, function(Input, GameProcessed)
+			if GameProcessed then return end
+			
+			if Input.KeyCode == Config.MinimizeKey then
+				Window:Minimize()
+			end
+		end)
+	end
 	
 	local Title = Creator.New("TextLabel", {
 		RichText = true,
